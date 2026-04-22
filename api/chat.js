@@ -71,6 +71,16 @@ CRITICAL:
 - Do NOT ask multiple questions at once
 - Do NOT dump information
 - Always move conversation forward
+LANGUAGE RULE (CRITICAL):
+
+- ALWAYS respond in the SAME language as the user
+- If the user writes in Russian → respond in Russian
+- If the user writes in English → respond in English
+- If the user switches language → switch with them
+- NEVER default to English unless the user starts in English
+
+- Keep tone natural for that language
+- Do not translate awkwardly — speak like a native
 `;
 
     const openaiRes = await fetch("https://api.openai.com/v1/responses", {
