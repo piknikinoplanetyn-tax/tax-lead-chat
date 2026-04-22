@@ -265,6 +265,7 @@
     const sendBtn = document.getElementById("sendBtn");
 
     let messages = [];
+    let leadData = {};
 
     function addMessage(role, text, isHtml = false) {
       const row = document.createElement("div");
@@ -315,7 +316,10 @@
           headers: {
             "Content-Type": "application/json"
           },
-          body: JSON.stringify({ messages })
+          body: JSON.stringify({
+            messages,
+            leadData
+          })
         });
 
         const data = await res.json();
@@ -327,6 +331,8 @@
         }
 
         const reply = data.reply || "No response received.";
+        leadData = data.leadData || leadData;
+
         messages.push({ role: "assistant", content: reply });
         addMessage("bot", reply);
       } catch (error) {
