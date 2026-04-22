@@ -1,10 +1,11 @@
 <!DOCTYPE html>
 <html>
 <head>
+  <meta charset="UTF-8">
   <title>AI Tax Chat</title>
 </head>
 <body>
-  <h2>AI Tax Assistant</h2>
+  <h1>AI Tax Assistant</h1>
 
   <div id="chat"></div>
 
@@ -15,19 +16,21 @@
     async function send() {
       const input = document.getElementById("msg");
       const text = input.value;
+      input.value = "";
 
       document.getElementById("chat").innerHTML += "<p><b>You:</b> " + text + "</p>";
 
       const res = await fetch("/api/chat", {
         method: "POST",
-        headers: {"Content-Type": "application/json"},
+        headers: {
+          "Content-Type": "application/json"
+        },
         body: JSON.stringify({ message: text })
       });
 
       const data = await res.json();
 
       document.getElementById("chat").innerHTML += "<p><b>Bot:</b> " + data.reply + "</p>";
-      input.value = "";
     }
   </script>
 </body>
