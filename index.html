@@ -1,37 +1,329 @@
 <!DOCTYPE html>
-<html>
+<html lang="ru">
 <head>
-  <meta charset="UTF-8">
-  <title>AI Tax Chat</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI Tax Assistant</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: Inter, Arial, sans-serif;
+      background: linear-gradient(180deg, #0f172a 0%, #111827 100%);
+      color: #e5e7eb;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+
+    .app {
+      width: 100%;
+      max-width: 900px;
+      height: 88vh;
+      background: rgba(17, 24, 39, 0.92);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 24px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      backdrop-filter: blur(12px);
+    }
+
+    .header {
+      padding: 22px 24px 18px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    .title {
+      margin: 0;
+      font-size: 28px;
+      font-weight: 700;
+      color: #f9fafb;
+    }
+
+    .subtitle {
+      margin: 8px 0 0;
+      color: #9ca3af;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    .chat {
+      flex: 1;
+      overflow-y: auto;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      scroll-behavior: smooth;
+    }
+
+    .message-row {
+      display: flex;
+      width: 100%;
+    }
+
+    .message-row.user {
+      justify-content: flex-end;
+    }
+
+    .message-row.bot {
+      justify-content: flex-start;
+    }
+
+    .bubble {
+      max-width: 75%;
+      padding: 14px 16px;
+      border-radius: 18px;
+      line-height: 1.5;
+      font-size: 15px;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .message-row.user .bubble {
+      background: #2563eb;
+      color: white;
+      border-bottom-right-radius: 6px;
+      box-shadow: 0 8px 20px rgba(37, 99, 235, 0.35);
+    }
+
+    .message-row.bot .bubble {
+      background: #1f2937;
+      color: #f3f4f6;
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      border-bottom-left-radius: 6px;
+    }
+
+    .typing {
+      display: inline-flex;
+      gap: 6px;
+      align-items: center;
+      height: 18px;
+    }
+
+    .typing span {
+      width: 8px;
+      height: 8px;
+      border-radius: 999px;
+      background: #9ca3af;
+      display: inline-block;
+      animation: blink 1.2s infinite ease-in-out;
+    }
+
+    .typing span:nth-child(2) {
+      animation-delay: 0.2s;
+    }
+
+    .typing span:nth-child(3) {
+      animation-delay: 0.4s;
+    }
+
+    @keyframes blink {
+      0%, 80%, 100% { opacity: 0.25; transform: scale(0.9); }
+      40% { opacity: 1; transform: scale(1); }
+    }
+
+    .composer {
+      padding: 18px;
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    .composer-inner {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .input {
+      flex: 1;
+      height: 52px;
+      border-radius: 16px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: #111827;
+      color: #f9fafb;
+      padding: 0 16px;
+      font-size: 15px;
+      outline: none;
+    }
+
+    .input::placeholder {
+      color: #6b7280;
+    }
+
+    .input:focus {
+      border-color: #2563eb;
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.2);
+    }
+
+    .send-btn {
+      height: 52px;
+      padding: 0 20px;
+      border: none;
+      border-radius: 16px;
+      background: #2563eb;
+      color: white;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: transform 0.12s ease, opacity 0.12s ease;
+    }
+
+    .send-btn:hover {
+      opacity: 0.95;
+    }
+
+    .send-btn:active {
+      transform: translateY(1px);
+    }
+
+    .send-btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    .hint {
+      margin-top: 10px;
+      font-size: 12px;
+      color: #6b7280;
+      text-align: center;
+    }
+
+    @media (max-width: 700px) {
+      body {
+        padding: 0;
+      }
+
+      .app {
+        height: 100vh;
+        max-width: 100%;
+        border-radius: 0;
+      }
+
+      .bubble {
+        max-width: 88%;
+      }
+
+      .title {
+        font-size: 22px;
+      }
+
+      .composer-inner {
+        gap: 8px;
+      }
+
+      .send-btn {
+        padding: 0 16px;
+      }
+    }
+  </style>
 </head>
 <body>
-  <h1>AI Tax Assistant</h1>
+  <div class="app">
+    <div class="header">
+      <h1 class="title">AI Tax Assistant</h1>
+      <p class="subtitle">
+        Ask a question about your taxes or filing situation. This is the first live version of your assistant.
+      </p>
+    </div>
 
-  <div id="chat"></div>
+    <div id="chat" class="chat"></div>
 
-  <input id="msg" placeholder="Type..." />
-  <button onclick="send()">Send</button>
+    <div class="composer">
+      <div class="composer-inner">
+        <input
+          id="msg"
+          class="input"
+          type="text"
+          placeholder="Type your message..."
+          onkeydown="handleKey(event)"
+        />
+        <button id="sendBtn" class="send-btn" onclick="send()">Send</button>
+      </div>
+      <div class="hint">Powered by OpenAI API</div>
+    </div>
+  </div>
 
   <script>
-    async function send() {
-      const input = document.getElementById("msg");
-      const text = input.value;
-      input.value = "";
+    const chat = document.getElementById("chat");
+    const input = document.getElementById("msg");
+    const sendBtn = document.getElementById("sendBtn");
 
-      document.getElementById("chat").innerHTML += "<p><b>You:</b> " + text + "</p>";
+    function addMessage(role, text, isHtml = false) {
+      const row = document.createElement("div");
+      row.className = `message-row ${role}`;
 
-      const res = await fetch("/api/chat", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({ message: text })
-      });
+      const bubble = document.createElement("div");
+      bubble.className = "bubble";
 
-      const data = await res.json();
+      if (isHtml) {
+        bubble.innerHTML = text;
+      } else {
+        bubble.textContent = text;
+      }
 
-      document.getElementById("chat").innerHTML += "<p><b>Bot:</b> " + data.reply + "</p>";
+      row.appendChild(bubble);
+      chat.appendChild(row);
+      chat.scrollTop = chat.scrollHeight;
+      return row;
     }
+
+    function handleKey(event) {
+      if (event.key === "Enter") {
+        send();
+      }
+    }
+
+    async function send() {
+      const text = input.value.trim();
+      if (!text) return;
+
+      addMessage("user", text);
+      input.value = "";
+      input.focus();
+
+      sendBtn.disabled = true;
+
+      const typingRow = addMessage(
+        "bot",
+        '<div class="typing"><span></span><span></span><span></span></div>',
+        true
+      );
+
+      try {
+        const res = await fetch("/api/chat", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({ message: text })
+        });
+
+        const data = await res.json();
+        typingRow.remove();
+
+        if (!res.ok) {
+          addMessage("bot", "Sorry, something went wrong. Please try again.");
+        } else {
+          addMessage("bot", data.reply || "No response received.");
+        }
+      } catch (error) {
+        typingRow.remove();
+        addMessage("bot", "Connection error. Please try again.");
+      } finally {
+        sendBtn.disabled = false;
+      }
+    }
+
+    addMessage("bot", "Hi! I’m your AI tax assistant. How can I help you today?");
   </script>
 </body>
 </html>
