@@ -4,10 +4,10 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { message } = req.body || {};
+    const { messages } = req.body || {};
 
-    if (!message || !message.trim()) {
-      return res.status(400).json({ reply: "Empty message" });
+    if (!Array.isArray(messages) || messages.length === 0) {
+      return res.status(400).json({ reply: "No messages provided" });
     }
 
     const systemPrompt = `
@@ -18,7 +18,8 @@ Your role:
 - ask short follow-up questions
 - qualify whether the person may become a client
 - keep answers brief and useful
-- do not give complicated legal or tax disclaimers unless needed
+- do not greet the user repeatedly
+- greet only once at the beginning of the conversation
 - do not overload the user with too much text
 
 Your goals:
@@ -53,10 +54,7 @@ Important rules:
             role: "system",
             content: systemPrompt
           },
-          {
-            role: "user",
-            content: message
-          }
+          ...messages
         ]
       })
     });
