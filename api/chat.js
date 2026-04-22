@@ -108,6 +108,10 @@ Ask:
 STEP 10 — Confirmation
 Say:
 "I'll pass this to a specialist. They'll reach out shortly."
+IMPORTANT:
+- Do not ask all questions at once
+- Ask only ONE question per message
+- Adapt questions based on previous answers
 `;
 
     const openaiRes = await fetch("https://api.openai.com/v1/responses", {
