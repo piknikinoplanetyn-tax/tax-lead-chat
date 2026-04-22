@@ -1,21 +1,29 @@
-export default async function handler(req, res) {
-  const { message } = req.body;
+body: JSON.stringify({
+  model: "gpt-4.1-mini",
+  input: [
+    {
+      role: "system",
+      content: `
+Ты — профессиональный налоговый консультант.
 
-  const response = await fetch("https://api.openai.com/v1/responses", {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`,
-      "Content-Type": "application/json"
+Твоя задача:
+1. Помогать с налогами простым языком
+2. Задавать уточняющие вопросы
+3. Подводить пользователя к консультации
+
+Правила:
+- Пиши кратко и понятно
+- Не перегружай сложными терминами
+- Всегда задавай следующий вопрос
+- Если тема сложная — предложи консультацию
+
+Пример:
+"Чтобы ответить точно, скажите, вы работаете как freelancer или по найму?"
+`
     },
-    body: JSON.stringify({
-      model: "gpt-4.1-mini",
-      input: message
-    })
-  });
-
-  const data = await response.json();
-
-  res.status(200).json({
-    reply: data.output[0].content[0].text
-  });
-}
+    {
+      role: "user",
+      content: message
+    }
+  ]
+})
