@@ -1,10 +1,51 @@
+async function sendToTelegram(text) {
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  const chatId = process.env.TELEGRAM_CHAT_ID;
+
+  if (!token || !chatId) {
+    console.error("Telegram env vars are missing");
+    return;
+  }
+
+  const url = `https://api.telegram.org/bot${token}/sendMessage`;
+
+  const telegramRes = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      chat_id: chatId,
+      text
+    })
+  });
+
+  const telegramData = await telegramRes.json();
+
+  if (!telegramRes.ok) {
+    console.error("Telegram API error:", telegramData);
+  }
+}
+
+function extractJson(text) {
+  const match = text.match(/\{[\s\S]*\}/);
+  if (!match) return null;
+
+  try {
+    return JSON.parse(match[0]);
+  } catch (error) {
+    console.error("JSON parse error:", error);
+    return null;
+  }
+}
+
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ reply: "Method not allowed" });
   }
 
   try {
-    const { messages } = req.body || {};
+    const { messages, leadData = {} } = req.body || {};
 
     if (!Array.isArray(messages) || messages.length === 0) {
       return res.status(400).json({ reply: "No messages provided" });
@@ -217,7 +258,41 @@ FINAL GOAL
 - Capture contact details
 `;
 
-    const openaiRes = await fetch("https://api.openai.com/v1/responses", {
+    const extractionPrompt = `
+You are a lead extraction system.
+
+Based on the conversation, extract structured lead data.
+
+Return ONLY valid JSON in this exact format:
+
+{
+  "lead_data": {
+    "name": "",
+    "preferred_contact": "",
+    "phone": "",
+    "whatsapp": "",
+    "telegram": "",
+    "email": "",
+    "country": "",
+    "us_connection": "",
+    "tax_type": "",
+    "business_type": "",
+    "urgency": "",
+    "main_issue": ""
+  },
+  "summary": "short summary for specialist",
+  "qualified": false,
+  "should_create_lead": false
+}
+
+Rules:
+- Merge with already known data
+- Do not invent facts
+- Leave unknown values as empty strings
+- should_create_lead = true only if there is a real lead and at least one contact method is present
+`;
+
+    const assistantRes = await fetch("https://api.openai.com/v1/responses", {
       method: "POST",
       headers: {
         "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`,
@@ -235,21 +310,125 @@ FINAL GOAL
       })
     });
 
-    const data = await openaiRes.json();
+    const assistantData = await assistantRes.json();
 
-    if (!openaiRes.ok) {
-      console.error("OpenAI API error:", data);
-      return res.status(openaiRes.status).json({
-        reply: data?.error?.message || "OpenAI request failed"
+    if (!assistantRes.ok) {
+      console.error("OpenAI assistant error:", assistantData);
+      return res.status(assistantRes.status).json({
+        reply: assistantData?.error?.message || "OpenAI request failed"
       });
     }
 
     const reply =
-      data?.output?.[0]?.content?.[0]?.text ||
-      data?.output_text ||
+      assistantData?.output?.[0]?.content?.[0]?.text ||
+      assistantData?.output_text ||
       "No response from model";
 
-    return res.status(200).json({ reply });
+    const extractionRes = await fetch("https://api.openai.com/v1/responses", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model: "gpt-4.1-mini",
+        input: [
+          {
+            role: "system",
+            content: extractionPrompt
+          },
+          {
+            role: "system",
+            content: `Existing lead data: ${JSON.stringify(leadData)}`
+          },
+          ...messages,
+          {
+            role: "assistant",
+            content: reply
+          }
+        ]
+      })
+    });
+
+    const extractionData = await extractionRes.json();
+
+    if (!extractionRes.ok) {
+      console.error("OpenAI extraction error:", extractionData);
+      return res.status(200).json({
+        reply,
+        leadData,
+        summary: "",
+        qualified: false,
+        shouldCreateLead: false
+      });
+    }
+
+    const rawExtraction =
+      extractionData?.output?.[0]?.content?.[0]?.text ||
+      extractionData?.output_text ||
+      "";
+
+    const parsed = extractJson(rawExtraction);
+
+    if (!parsed) {
+      console.error("Could not parse extraction JSON:", rawExtraction);
+      return res.status(200).json({
+        reply,
+        leadData,
+        summary: "",
+        qualified: false,
+        shouldCreateLead: false
+      });
+    }
+
+    const mergedLeadData = {
+      name: parsed.lead_data?.name || leadData.name || "",
+      preferred_contact: parsed.lead_data?.preferred_contact || leadData.preferred_contact || "",
+      phone: parsed.lead_data?.phone || leadData.phone || "",
+      whatsapp: parsed.lead_data?.whatsapp || leadData.whatsapp || "",
+      telegram: parsed.lead_data?.telegram || leadData.telegram || "",
+      email: parsed.lead_data?.email || leadData.email || "",
+      country: parsed.lead_data?.country || leadData.country || "",
+      us_connection: parsed.lead_data?.us_connection || leadData.us_connection || "",
+      tax_type: parsed.lead_data?.tax_type || leadData.tax_type || "",
+      business_type: parsed.lead_data?.business_type || leadData.business_type || "",
+      urgency: parsed.lead_data?.urgency || leadData.urgency || "",
+      main_issue: parsed.lead_data?.main_issue || leadData.main_issue || ""
+    };
+
+    const shouldCreateLead = Boolean(parsed.should_create_lead);
+
+    if (shouldCreateLead) {
+      const telegramMessage = `
+🔥 Новый лид — SmartBooks&Tax
+
+Имя: ${mergedLeadData.name || "-"}
+Предпочтительный контакт: ${mergedLeadData.preferred_contact || "-"}
+Телефон: ${mergedLeadData.phone || "-"}
+WhatsApp: ${mergedLeadData.whatsapp || "-"}
+Telegram: ${mergedLeadData.telegram || "-"}
+Email: ${mergedLeadData.email || "-"}
+Страна: ${mergedLeadData.country || "-"}
+Связь с США: ${mergedLeadData.us_connection || "-"}
+Тип налогового вопроса: ${mergedLeadData.tax_type || "-"}
+Тип бизнеса: ${mergedLeadData.business_type || "-"}
+Срочность: ${mergedLeadData.urgency || "-"}
+Основной запрос: ${mergedLeadData.main_issue || "-"}
+
+Summary:
+${parsed.summary || "-"}
+      `.trim();
+
+      await sendToTelegram(telegramMessage);
+    }
+
+    return res.status(200).json({
+      reply,
+      leadData: mergedLeadData,
+      summary: parsed.summary || "",
+      qualified: Boolean(parsed.qualified),
+      shouldCreateLead
+    });
   } catch (error) {
     console.error("Server error:", error);
     return res.status(500).json({ reply: "Server error" });
