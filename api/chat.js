@@ -63,6 +63,7 @@ function detectLeadTemperature({ qualified, leadData, summary }) {
   const hasContactInfo = hasAnyContact(leadData);
   const hasBusinessContext = Boolean(
     leadData.business_type ||
+      leadData.industry ||
       leadData.us_connection ||
       leadData.tax_type ||
       leadData.main_issue
@@ -142,6 +143,7 @@ function buildTelegramMessage({ leadData, summary, qualified }) {
     compactField("Связь с США", leadData.us_connection),
     compactField("Тип налогового вопроса", leadData.tax_type),
     compactField("Тип бизнеса", leadData.business_type),
+    compactField("Сфера деятельности", leadData.industry),
     compactField("Срочность", leadData.urgency),
     compactField("Основной запрос", leadData.main_issue)
   ].filter(Boolean);
@@ -238,6 +240,7 @@ CORE BEHAVIOR
 - Do not sound robotic
 - Do not ask unnecessary or obvious questions
 - Focus only on relevant details
+- When relevant, clarify the user's industry / business sphere
 
 --------------------------------
 US TAX ONLY
@@ -278,6 +281,7 @@ You should NATURALLY explore:
 - US connection (income, company, residency)
 - tax status (filing / not filing)
 - type of income or business
+- industry / business sphere
 - urgency
 
 BUT:
@@ -413,6 +417,7 @@ Return ONLY valid JSON in this exact format:
     "us_connection": "",
     "tax_type": "",
     "business_type": "",
+    "industry": "",
     "urgency": "",
     "main_issue": ""
   },
@@ -439,6 +444,14 @@ NORMALIZATION RULES:
 - Normalize country names to Russian (USA → США, Russia → Россия, etc.)
 - Normalize contact preference to Russian (phone → телефон, email → email, telegram → telegram, whatsapp → WhatsApp)
 - Normalize phone numbers to international format if possible
+- Determine and extract the industry / business sphere in Russian where possible
+  Examples:
+  - trucking / logistics → грузоперевозки / логистика
+  - e-commerce → электронная коммерция
+  - IT services → ИТ-услуги
+  - consulting → консалтинг
+  - construction → строительство
+  - restaurant → ресторанный бизнес
 
 LEAD RULES:
 - should_create_lead = true ONLY if:
@@ -550,6 +563,7 @@ LEAD RULES:
       us_connection: parsed.lead_data?.us_connection || leadData.us_connection || "",
       tax_type: parsed.lead_data?.tax_type || leadData.tax_type || "",
       business_type: parsed.lead_data?.business_type || leadData.business_type || "",
+      industry: parsed.lead_data?.industry || leadData.industry || "",
       urgency: parsed.lead_data?.urgency || leadData.urgency || "",
       main_issue: parsed.lead_data?.main_issue || leadData.main_issue || ""
     };
