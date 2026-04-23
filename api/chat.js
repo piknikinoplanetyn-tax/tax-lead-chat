@@ -68,7 +68,11 @@ function detectLeadTemperature({ qualified, leadData, summary }) {
       leadData.tax_type ||
       leadData.main_issue ||
       leadData.employees_count ||
-      leadData.payroll_status
+      leadData.payroll_status ||
+      leadData.state_registration ||
+      leadData.ein_status ||
+      leadData.filing_status ||
+      leadData.back_taxes
   );
   const hasStrongSummary = Boolean(summary && summary.trim().length > 40);
 
@@ -83,14 +87,27 @@ function detectLeadTemperature({ qualified, leadData, summary }) {
   return "холодный";
 }
 
-function detectPriority(temperature) {
-  if (temperature === "горячий") return "высокий";
+function detectPriority(temperature, leadData) {
+  const hasBackTaxes =
+    leadData.back_taxes &&
+    leadData.back_taxes !== "нет" &&
+    leadData.back_taxes !== "неизвестно";
+
+  if (temperature === "горячий" || hasBackTaxes) return "высокий";
   if (temperature === "тёплый") return "средний";
   return "низкий";
 }
 
 function detectNextAction(temperature, leadData) {
   const preferred = leadData.preferred_contact || "контакт клиента";
+  const hasBackTaxes =
+    leadData.back_taxes &&
+    leadData.back_taxes !== "нет" &&
+    leadData.back_taxes !== "неизвестно";
+
+  if (hasBackTaxes) {
+    return `Связаться как можно скорее через: ${preferred}. Уточнить просрочки и статус обязательств`;
+  }
 
   if (temperature === "горячий") {
     return `Связаться как можно скорее через: ${preferred}`;
@@ -128,7 +145,7 @@ function buildTelegramMessage({ leadData, summary, qualified }) {
     leadData,
     summary
   });
-  const priority = detectPriority(temperature);
+  const priority = detectPriority(temperature, leadData);
   const nextAction = detectNextAction(temperature, leadData);
 
   const contactLines = [
@@ -146,6 +163,10 @@ function buildTelegramMessage({ leadData, summary, qualified }) {
     compactField("Тип налогового вопроса", leadData.tax_type),
     compactField("Тип бизнеса", leadData.business_type),
     compactField("Сфера деятельности", leadData.industry),
+    compactField("Штат регистрации", leadData.state_registration),
+    compactField("Статус EIN", leadData.ein_status),
+    compactField("Статус подачи деклараций", leadData.filing_status),
+    compactField("Просрочки / back taxes", leadData.back_taxes),
     compactField("Стадия бизнеса", leadData.business_stage),
     compactField("Количество сотрудников", leadData.employees_count),
     compactField("Owner-operator", leadData.owner_operator),
@@ -248,6 +269,11 @@ CORE BEHAVIOR
 - Focus only on relevant details
 - When relevant, clarify the user's industry / business sphere
 - When relevant, clarify the size and structure of the business
+- When relevant, clarify:
+  - state of registration
+  - EIN status
+  - whether tax returns have already been filed
+  - whether there are any overdue filings or back taxes
 
 --------------------------------
 US TAX ONLY
@@ -290,6 +316,10 @@ You should NATURALLY explore:
 - type of income or business
 - industry / business sphere
 - business size / stage
+- state of registration
+- EIN status
+- filing history
+- overdue filings / back taxes
 - urgency
 
 BUT:
@@ -426,6 +456,10 @@ Return ONLY valid JSON in this exact format:
     "tax_type": "",
     "business_type": "",
     "industry": "",
+    "state_registration": "",
+    "ein_status": "",
+    "filing_status": "",
+    "back_taxes": "",
     "business_stage": "",
     "employees_count": "",
     "owner_operator": "",
@@ -480,6 +514,24 @@ BUSINESS SIZE RULES:
 - Extract payroll_status in Russian:
   - "есть payroll"
   - "нет payroll"
+  - "неизвестно"
+
+REGISTRATION & COMPLIANCE RULES:
+- Extract state_registration in Russian if possible:
+  - Colorado → Колорадо
+  - Delaware → Делавэр
+  - Wyoming → Вайоминг
+- Extract ein_status in Russian:
+  - "EIN получен"
+  - "EIN не получен"
+  - "неизвестно"
+- Extract filing_status in Russian:
+  - "декларации уже подавались"
+  - "декларации ещё не подавались"
+  - "неизвестно"
+- Extract back_taxes in Russian:
+  - "есть просрочки"
+  - "нет просрочек"
   - "неизвестно"
 
 LEAD RULES:
@@ -593,6 +645,10 @@ LEAD RULES:
       tax_type: parsed.lead_data?.tax_type || leadData.tax_type || "",
       business_type: parsed.lead_data?.business_type || leadData.business_type || "",
       industry: parsed.lead_data?.industry || leadData.industry || "",
+      state_registration: parsed.lead_data?.state_registration || leadData.state_registration || "",
+      ein_status: parsed.lead_data?.ein_status || leadData.ein_status || "",
+      filing_status: parsed.lead_data?.filing_status || leadData.filing_status || "",
+      back_taxes: parsed.lead_data?.back_taxes || leadData.back_taxes || "",
       business_stage: parsed.lead_data?.business_stage || leadData.business_stage || "",
       employees_count: parsed.lead_data?.employees_count || leadData.employees_count || "",
       owner_operator: parsed.lead_data?.owner_operator || leadData.owner_operator || "",
