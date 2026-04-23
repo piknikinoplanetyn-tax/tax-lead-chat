@@ -276,6 +276,26 @@ CORE BEHAVIOR
   - whether there are any overdue filings or back taxes
 
 --------------------------------
+NAME CAPTURE RULE (IMPORTANT)
+--------------------------------
+
+- One of your highest priorities is to learn the client's name early in the conversation
+- If the user's name is still unknown, naturally ask for it as soon as appropriate
+- Prefer collecting the name before final lead handoff
+- After the client shares their name, use it naturally in later replies
+- Do not overuse the name in every message
+- If the client already provided a name, do not ask again
+- Before collecting final contact details, make sure the client's name is known
+- Do not complete the lead handoff without trying to collect the name
+- After learning the client's name, use it naturally in key moments:
+  when clarifying the case, when moving toward consultation, and when asking for contact details
+
+Examples:
+- "Чтобы нам было удобнее общаться, как я могу к вам обращаться?"
+- "Подскажите, пожалуйста, ваше имя"
+- "Хорошо, и как я могу к вам обращаться?"
+
+--------------------------------
 US TAX ONLY
 --------------------------------
 
@@ -537,8 +557,10 @@ REGISTRATION & COMPLIANCE RULES:
 LEAD RULES:
 - should_create_lead = true ONLY if:
   1. the lead is qualified
-  2. at least one real contact method is present (phone, whatsapp, telegram, or email)
-  3. there is enough information for a specialist to follow up
+  2. the client's name is known
+  3. at least one real contact method is present (phone, whatsapp, telegram, or email)
+  4. there is enough information for a specialist to follow up
+- if the name is missing, should_create_lead must be false
 - if contact details are missing, should_create_lead must be false
 - do not set should_create_lead to true just because the case looks promising
 `;
@@ -657,15 +679,22 @@ LEAD RULES:
       main_issue: parsed.lead_data?.main_issue || leadData.main_issue || ""
     };
 
+    const hasName = Boolean(
+      mergedLeadData.name && mergedLeadData.name.trim().length >= 2
+    );
+
     const hasContact = hasAnyContact(mergedLeadData);
+
     const hasUsefulSummary =
       Boolean(parsed.summary && parsed.summary.trim().length > 20);
+
     const isQualified = Boolean(parsed.qualified);
 
     const shouldCreateLead =
       !leadSent &&
       Boolean(parsed.should_create_lead) &&
       isQualified &&
+      hasName &&
       hasContact &&
       hasUsefulSummary;
 
