@@ -45,7 +45,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { messages, leadData = {} } = req.body || {};
+    const { messages, leadData = {}, leadSent = false } = req.body || {};
 
     if (!Array.isArray(messages) || messages.length === 0) {
       return res.status(400).json({ reply: "No messages provided" });
@@ -289,7 +289,12 @@ Rules:
 - Merge with already known data
 - Do not invent facts
 - Leave unknown values as empty strings
-- should_create_lead = true only if there is a real lead and at least one contact method is present
+- should_create_lead = true ONLY if:
+  1. the lead is qualified
+  2. at least one real contact method is present (phone, whatsapp, telegram, or email)
+  3. there is enough information for a specialist to follow up
+- if contact details are missing, should_create_lead must be false
+- do not set should_create_lead to true just because the case looks promising
 `;
 
     const assistantRes = await fetch("https://api.openai.com/v1/responses", {
@@ -396,7 +401,23 @@ Rules:
       main_issue: parsed.lead_data?.main_issue || leadData.main_issue || ""
     };
 
-    const shouldCreateLead = Boolean(parsed.should_create_lead);
+    const hasContact =
+      Boolean(mergedLeadData.phone) ||
+      Boolean(mergedLeadData.whatsapp) ||
+      Boolean(mergedLeadData.telegram) ||
+      Boolean(mergedLeadData.email);
+
+    const hasUsefulSummary =
+      Boolean(parsed.summary && parsed.summary.trim().length > 20);
+
+    const isQualified = Boolean(parsed.qualified);
+
+    const shouldCreateLead =
+      !leadSent &&
+      Boolean(parsed.should_create_lead) &&
+      isQualified &&
+      hasContact &&
+      hasUsefulSummary;
 
     if (shouldCreateLead) {
       const telegramMessage = `
@@ -426,7 +447,7 @@ ${parsed.summary || "-"}
       reply,
       leadData: mergedLeadData,
       summary: parsed.summary || "",
-      qualified: Boolean(parsed.qualified),
+      qualified: isQualified,
       shouldCreateLead
     });
   } catch (error) {
