@@ -39,6 +39,141 @@ function extractJson(text) {
   }
 }
 
+function formatDateRu() {
+  return new Date().toLocaleString("ru-RU", {
+    timeZone: "Europe/Moscow",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit"
+  });
+}
+
+function hasAnyContact(lead) {
+  return Boolean(
+    lead.phone ||
+      lead.whatsapp ||
+      lead.telegram ||
+      lead.email
+  );
+}
+
+function detectLeadTemperature({ qualified, leadData, summary }) {
+  const hasContactInfo = hasAnyContact(leadData);
+  const hasBusinessContext = Boolean(
+    leadData.business_type ||
+      leadData.us_connection ||
+      leadData.tax_type ||
+      leadData.main_issue
+  );
+  const hasStrongSummary = Boolean(summary && summary.trim().length > 40);
+
+  if (qualified && hasContactInfo && hasBusinessContext && hasStrongSummary) {
+    return "горячий";
+  }
+
+  if (qualified && (hasContactInfo || hasBusinessContext)) {
+    return "тёплый";
+  }
+
+  return "холодный";
+}
+
+function detectPriority(temperature) {
+  if (temperature === "горячий") return "высокий";
+  if (temperature === "тёплый") return "средний";
+  return "низкий";
+}
+
+function detectNextAction(temperature, leadData) {
+  const preferred = leadData.preferred_contact || "контакт клиента";
+
+  if (temperature === "горячий") {
+    return `Связаться как можно скорее через: ${preferred}`;
+  }
+
+  if (temperature === "тёплый") {
+    return `Связаться в рабочее время и уточнить детали кейса через: ${preferred}`;
+  }
+
+  return "Проверить кейс и при необходимости сделать мягкий follow-up";
+}
+
+function humanLanguageLabel(code) {
+  if (code === "ru") return "русский";
+  if (code === "en") return "английский";
+  return code || "-";
+}
+
+function languageFlag(code) {
+  if (code === "ru") return "🇷🇺";
+  if (code === "en") return "🇺🇸";
+  return "🌍";
+}
+
+function compactField(label, value) {
+  if (!value) return "";
+  return `${label}: ${value}`;
+}
+
+function buildTelegramMessage({ leadData, summary, qualified }) {
+  const languageLabel = humanLanguageLabel(leadData.language);
+  const flag = languageFlag(leadData.language);
+  const temperature = detectLeadTemperature({
+    qualified,
+    leadData,
+    summary
+  });
+  const priority = detectPriority(temperature);
+  const nextAction = detectNextAction(temperature, leadData);
+
+  const contactLines = [
+    compactField("Имя", leadData.name),
+    compactField("Предпочтительный контакт", leadData.preferred_contact),
+    compactField("Телефон", leadData.phone),
+    compactField("WhatsApp", leadData.whatsapp),
+    compactField("Telegram", leadData.telegram),
+    compactField("Email", leadData.email)
+  ].filter(Boolean);
+
+  const caseLines = [
+    compactField("Страна", leadData.country),
+    compactField("Связь с США", leadData.us_connection),
+    compactField("Тип налогового вопроса", leadData.tax_type),
+    compactField("Тип бизнеса", leadData.business_type),
+    compactField("Срочность", leadData.urgency),
+    compactField("Основной запрос", leadData.main_issue)
+  ].filter(Boolean);
+
+  const statusBlock = [
+    `Статус лида: ${temperature}`,
+    `Приоритет: ${priority}`,
+    `${flag} Язык клиента: ${languageLabel}`,
+    `Рекомендуемый язык общения: ${languageLabel}`,
+    `Следующее действие: ${nextAction}`
+  ];
+
+  const blocks = [
+    `🔥 Новый лид — SmartBooks&Tax`,
+    `Дата: ${formatDateRu()}`,
+    "",
+    "Контакт:",
+    ...(contactLines.length ? contactLines : ["Контактные данные пока не собраны"]),
+    "",
+    "Кейс:",
+    ...(caseLines.length ? caseLines : ["Недостаточно данных по кейсу"]),
+    "",
+    "Статус:",
+    ...statusBlock,
+    "",
+    "Summary:",
+    summary || "Нет summary"
+  ];
+
+  return blocks.join("\n").trim();
+}
+
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ reply: "Method not allowed" });
@@ -419,15 +554,9 @@ LEAD RULES:
       main_issue: parsed.lead_data?.main_issue || leadData.main_issue || ""
     };
 
-    const hasContact =
-      Boolean(mergedLeadData.phone) ||
-      Boolean(mergedLeadData.whatsapp) ||
-      Boolean(mergedLeadData.telegram) ||
-      Boolean(mergedLeadData.email);
-
+    const hasContact = hasAnyContact(mergedLeadData);
     const hasUsefulSummary =
       Boolean(parsed.summary && parsed.summary.trim().length > 20);
-
     const isQualified = Boolean(parsed.qualified);
 
     const shouldCreateLead =
@@ -438,45 +567,11 @@ LEAD RULES:
       hasUsefulSummary;
 
     if (shouldCreateLead) {
-      const languageLabel =
-        mergedLeadData.language === "en"
-          ? "английский"
-          : mergedLeadData.language === "ru"
-          ? "русский"
-          : mergedLeadData.language || "-";
-
-      const flag =
-        mergedLeadData.language === "en"
-          ? "🇺🇸"
-          : mergedLeadData.language === "ru"
-          ? "🇷🇺"
-          : "🌍";
-
-      const telegramMessage = `
-🔥 Новый лид — SmartBooks&Tax
-
-Дата: ${new Date().toLocaleString()}
-
-Имя: ${mergedLeadData.name || "-"}
-Предпочтительный контакт: ${mergedLeadData.preferred_contact || "-"}
-Телефон: ${mergedLeadData.phone || "-"}
-WhatsApp: ${mergedLeadData.whatsapp || "-"}
-Telegram: ${mergedLeadData.telegram || "-"}
-Email: ${mergedLeadData.email || "-"}
-Страна: ${mergedLeadData.country || "-"}
-
-${flag} Язык клиента: ${languageLabel}
-💬 Рекомендуемый язык общения: ${languageLabel}
-
-Связь с США: ${mergedLeadData.us_connection || "-"}
-Тип налогового вопроса: ${mergedLeadData.tax_type || "-"}
-Тип бизнеса: ${mergedLeadData.business_type || "-"}
-Срочность: ${mergedLeadData.urgency || "-"}
-Основной запрос: ${mergedLeadData.main_issue || "-"}
-
-Summary:
-${parsed.summary || "-"}
-      `.trim();
+      const telegramMessage = buildTelegramMessage({
+        leadData: mergedLeadData,
+        summary: parsed.summary || "",
+        qualified: isQualified
+      });
 
       await sendToTelegram(telegramMessage);
     }
