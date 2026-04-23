@@ -597,6 +597,7 @@ LEAD RULES:
 - if the name is missing, should_create_lead must be false
 - if contact details are missing, should_create_lead must be false
 - do not set should_create_lead to true just because the case looks promising
+- If the conversation already contains the client's name and contact details, and the case is qualified, set should_create_lead to true
 `;
 
     const assistantRes = await fetch("https://api.openai.com/v1/responses", {
@@ -724,13 +725,28 @@ LEAD RULES:
 
     const isQualified = Boolean(parsed.qualified);
 
-    const shouldCreateLead =
-      !leadSent &&
-      Boolean(parsed.should_create_lead) &&
+    const isReadyByData =
       isQualified &&
       hasName &&
       hasContact &&
       hasUsefulSummary;
+
+    const shouldCreateLead =
+      !leadSent &&
+      (Boolean(parsed.should_create_lead) || isReadyByData) &&
+      isReadyByData;
+
+    console.log("Lead debug:", {
+      parsedLeadData: parsed.lead_data,
+      mergedLeadData,
+      qualified: parsed.qualified,
+      should_create_lead_model: parsed.should_create_lead,
+      hasName,
+      hasContact,
+      hasUsefulSummary,
+      isReadyByData,
+      finalShouldCreateLead: shouldCreateLead
+    });
 
     if (shouldCreateLead) {
       const telegramMessage = buildTelegramMessage({
