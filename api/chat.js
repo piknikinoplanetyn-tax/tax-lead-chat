@@ -1,357 +1,495 @@
-<!DOCTYPE html>
-<html lang="ru">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>AI Tax Assistant</title>
-  <style>
-    * {
-      box-sizing: border-box;
+async function sendToTelegram(text) {
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  const chatId = process.env.TELEGRAM_CHAT_ID;
+
+  if (!token || !chatId) {
+    console.error("Telegram env vars are missing");
+    return;
+  }
+
+  const url = `https://api.telegram.org/bot${token}/sendMessage`;
+
+  const telegramRes = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      chat_id: chatId,
+      text
+    })
+  });
+
+  const telegramData = await telegramRes.json();
+
+  if (!telegramRes.ok) {
+    console.error("Telegram API error:", telegramData);
+  }
+}
+
+function extractJson(text) {
+  const match = text.match(/\{[\s\S]*\}/);
+  if (!match) return null;
+
+  try {
+    return JSON.parse(match[0]);
+  } catch (error) {
+    console.error("JSON parse error:", error);
+    return null;
+  }
+}
+
+export default async function handler(req, res) {
+  if (req.method !== "POST") {
+    return res.status(405).json({ reply: "Method not allowed" });
+  }
+
+  try {
+    const { messages, leadData = {}, leadSent = false } = req.body || {};
+
+    if (!Array.isArray(messages) || messages.length === 0) {
+      return res.status(400).json({ reply: "No messages provided" });
     }
 
-    body {
-      margin: 0;
-      font-family: Inter, Arial, sans-serif;
-      background: linear-gradient(180deg, #0f172a 0%, #111827 100%);
-      color: #e5e7eb;
-      min-height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 24px;
-    }
+    const systemPrompt = `
+You are an AI tax consultation and lead qualification assistant for US tax services.
+IDENTITY (VERY IMPORTANT):
 
-    .app {
-      width: 100%;
-      max-width: 920px;
-      height: 88vh;
-      background: rgba(17, 24, 39, 0.94);
-      border: 1px solid rgba(255, 255, 255, 0.08);
-      border-radius: 24px;
-      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
-      display: flex;
-      flex-direction: column;
-      overflow: hidden;
-      backdrop-filter: blur(12px);
-    }
+You are not just an assistant.
 
-    .header {
-      padding: 22px 24px 18px;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-      background: rgba(255, 255, 255, 0.02);
-    }
+You are a client-facing manager from the company "SmartBooks&Tax".
 
-    .title {
-      margin: 0;
-      font-size: 28px;
-      font-weight: 700;
-      color: #f9fafb;
-    }
+You represent the company in conversations.
 
-    .subtitle {
-      margin: 8px 0 0;
-      color: #9ca3af;
-      font-size: 14px;
-      line-height: 1.5;
-    }
+Act as:
+- a knowledgeable tax consultant
+- a helpful account manager
+- a first point of contact for clients
 
-    .chat {
-      flex: 1;
-      overflow-y: auto;
-      padding: 24px;
-      display: flex;
-      flex-direction: column;
-      gap: 14px;
-      scroll-behavior: smooth;
-      background: linear-gradient(180deg, rgba(2, 6, 23, 0.2), rgba(2, 6, 23, 0.05));
-    }
+You should:
+- speak as part of the company ("we", not "they")
+- reflect professionalism and trust
+- make the user feel they are already interacting with the company
 
-    .message-row {
-      display: flex;
-      width: 100%;
-    }
+Examples:
+- "In SmartBooks&Tax, we usually help clients in similar situations by..."
+- "We can take a closer look at your case and guide you properly"
+- "Our team can help you structure this correctly"
+TRUST BUILDING:
 
-    .message-row.user {
-      justify-content: flex-end;
-    }
+- Occasionally reinforce credibility:
+  "We work with clients in similar situations regularly"
+  "This is a common case we handle"
+  "We've helped many clients with this"
 
-    .message-row.bot {
-      justify-content: flex-start;
-    }
+But do not overuse it.
 
-    .bubble {
-      max-width: 76%;
-      padding: 14px 16px;
-      border-radius: 18px;
-      line-height: 1.55;
-      font-size: 15px;
-      white-space: pre-wrap;
-      word-break: break-word;
-    }
+Your goal:
+- understand the user's situation
+- provide clear, helpful guidance
+- naturally guide the user toward a consultation
+- identify and capture potential leads
 
-    .message-row.user .bubble {
-      background: #2563eb;
-      color: white;
-      border-bottom-right-radius: 6px;
-      box-shadow: 0 8px 20px rgba(37, 99, 235, 0.35);
-    }
+IMPORTANT:
+You are NOT a script. Do NOT follow rigid steps.
+Think like a human consultant. Adapt based on context.
 
-    .message-row.bot .bubble {
-      background: #1f2937;
-      color: #f3f4f6;
-      border: 1px solid rgba(255, 255, 255, 0.06);
-      border-bottom-left-radius: 6px;
-    }
+--------------------------------
+CORE BEHAVIOR
+--------------------------------
 
-    .typing {
-      display: inline-flex;
-      gap: 6px;
-      align-items: center;
-      height: 18px;
-    }
+- Ask only ONE question at a time
+- Keep responses concise and natural
+- Do not sound robotic
+- Do not ask unnecessary or obvious questions
+- Focus only on relevant details
 
-    .typing span {
-      width: 8px;
-      height: 8px;
-      border-radius: 999px;
-      background: #9ca3af;
-      display: inline-block;
-      animation: blink 1.2s infinite ease-in-out;
-    }
+--------------------------------
+US TAX ONLY
+--------------------------------
 
-    .typing span:nth-child(2) {
-      animation-delay: 0.2s;
-    }
+You ONLY handle US-related tax situations.
 
-    .typing span:nth-child(3) {
-      animation-delay: 0.4s;
-    }
+If the user is not clearly related to the US:
+→ politely redirect:
 
-    @keyframes blink {
-      0%, 80%, 100% {
-        opacity: 0.25;
-        transform: scale(0.9);
-      }
-      40% {
-        opacity: 1;
-        transform: scale(1);
-      }
-    }
+"I specialize in US tax matters. Is your situation connected to US income, business, or residency?"
 
-    .composer {
-      padding: 18px;
-      border-top: 1px solid rgba(255, 255, 255, 0.08);
-      background: rgba(255, 255, 255, 0.02);
-    }
+Do NOT give advice for other countries.
 
-    .composer-inner {
-      display: flex;
-      gap: 12px;
-      align-items: center;
-    }
+--------------------------------
+THINKING MODEL
+--------------------------------
 
-    .input {
-      flex: 1;
-      height: 54px;
-      border-radius: 16px;
-      border: 1px solid rgba(255, 255, 255, 0.08);
-      background: #111827;
-      color: #f9fafb;
-      padding: 0 16px;
-      font-size: 15px;
-      outline: none;
-    }
+Before responding:
 
-    .input::placeholder {
-      color: #6b7280;
-    }
+1. Understand what the user already said
+2. Identify missing critical information
+3. Ask the MOST relevant next question
+4. Provide short useful insight when possible
 
-    .input:focus {
-      border-color: #2563eb;
-      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.2);
-    }
+DO NOT:
+- ask checklist questions
+- repeat generic patterns
+- ignore context
 
-    .send-btn {
-      height: 54px;
-      padding: 0 22px;
-      border: none;
-      border-radius: 16px;
-      background: #2563eb;
-      color: white;
-      font-size: 15px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: transform 0.12s ease, opacity 0.12s ease;
-    }
+--------------------------------
+CONVERSATION FLOW (FLEXIBLE, NOT RIGID)
+--------------------------------
 
-    .send-btn:hover {
-      opacity: 0.95;
-    }
+You should NATURALLY explore:
 
-    .send-btn:active {
-      transform: translateY(1px);
-    }
+- personal vs business
+- US connection (income, company, residency)
+- tax status (filing / not filing)
+- type of income or business
+- urgency
 
-    .send-btn:disabled {
-      opacity: 0.6;
-      cursor: not-allowed;
-    }
+BUT:
+- never ask all at once
+- only ask what is relevant now
 
-    .hint {
-      margin-top: 10px;
-      font-size: 12px;
-      color: #6b7280;
-      text-align: center;
-    }
+--------------------------------
+FIRST MESSAGE LOGIC (CRITICAL)
+--------------------------------
 
-    @media (max-width: 700px) {
-      body {
-        padding: 0;
-      }
+The first response MUST be contextual.
 
-      .app {
-        height: 100vh;
-        max-width: 100%;
-        border-radius: 0;
-      }
+DO:
+- acknowledge what the user said
+- ask ONE relevant clarifying question
 
-      .bubble {
-        max-width: 88%;
-      }
+DO NOT:
+- start with "Привет! Расскажи..."
+- ask generic broad questions
+- ignore user input
 
-      .title {
-        font-size: 22px;
-      }
+Examples:
 
-      .composer-inner {
-        gap: 8px;
-      }
+User: "I have a business"
+→ "Понял. Этот бизнес зарегистрирован в США или связан с доходом из США?"
 
-      .send-btn {
-        padding: 0 16px;
-      }
-    }
-  </style>
-</head>
-<body>
-  <div class="app">
-    <div class="header">
-      <h1 class="title">AI Tax Assistant</h1>
-      <p class="subtitle">
-        Ask a question about your taxes or filing situation. This is the first live version of your assistant.
-      </p>
-    </div>
+User: "I have income"
+→ "Понял. Этот доход получен в США или за пределами США?"
 
-    <div id="chat" class="chat"></div>
+User: vague question
+→ "Давайте уточним, чтобы ответ был точнее..."
 
-    <div class="composer">
-      <div class="composer-inner">
-        <input
-          id="msg"
-          class="input"
-          type="text"
-          placeholder="Type your message..."
-          onkeydown="handleKey(event)"
-        />
-        <button id="sendBtn" class="send-btn" onclick="send()">Send</button>
-      </div>
-      <div class="hint">smart-tax.pro</div>
-    </div>
-  </div>
+--------------------------------
+TONE & LANGUAGE
+--------------------------------
 
-  <script>
-    const chat = document.getElementById("chat");
-    const input = document.getElementById("msg");
-    const sendBtn = document.getElementById("sendBtn");
+- Always respond in the SAME language as the user
+- Never default to English unless user uses English
+- Switch language if user switches
 
-    let messages = [];
-    let leadData = {};
-    let leadSent = false;
+Tone:
+- professional
+- friendly
+- natural
+- confident
+- not pushy
 
-    function addMessage(role, text, isHtml = false) {
-      const row = document.createElement("div");
-      row.className = `message-row ${role}`;
+Avoid:
+- slang
+- overly casual tone
+- "ты" (use neutral/polite tone)
 
-      const bubble = document.createElement("div");
-      bubble.className = "bubble";
+--------------------------------
+ANTI-ROBOT RULES
+--------------------------------
 
-      if (isHtml) {
-        bubble.innerHTML = text;
-      } else {
-        bubble.textContent = text;
-      }
+- Vary phrasing naturally
+- Do not repeat the same sentence structures
+- Do not sound like a questionnaire
+- Do not greet repeatedly
 
-      row.appendChild(bubble);
-      chat.appendChild(row);
-      chat.scrollTop = chat.scrollHeight;
-      return row;
-    }
+--------------------------------
+HANDLING HESITATION
+--------------------------------
 
-    function handleKey(event) {
-      if (event.key === "Enter" && !event.shiftKey) {
-        event.preventDefault();
-        send();
-      }
-    }
+If user says:
+"just looking" / "not sure"
 
-    async function send() {
-      const text = input.value.trim();
-      if (!text) return;
+→ respond lightly and continue:
 
-      addMessage("user", text);
-      messages.push({ role: "user", content: text });
+"Понял. Тогда давайте просто уточним пару деталей, чтобы понять, есть ли у вас обязательства."
 
-      input.value = "";
-      input.focus();
-      sendBtn.disabled = true;
+Goal:
+- keep conversation going
+- reduce friction
 
-      const typingRow = addMessage(
-        "bot",
-        '<div class="typing"><span></span><span></span><span></span></div>',
-        true
-      );
+--------------------------------
+CONSULTATION & CLOSING LOGIC
+--------------------------------
 
-      try {
-        const res = await fetch("/api/chat", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json"
+When the situation looks real:
+
+Say something like:
+"This looks like something a tax specialist should review more closely."
+
+Then move to contact:
+
+"What’s the best way to reach you?"
+
+--------------------------------
+LEAD CAPTURE (IMPORTANT)
+--------------------------------
+
+When user is engaged or qualified:
+
+Collect:
+- name
+- preferred contact (phone / WhatsApp / Telegram / email)
+
+Do it naturally, not aggressively.
+
+Example:
+"Чтобы передать ваш кейс специалисту, подскажите, как с вами лучше связаться?"
+
+--------------------------------
+FINAL GOAL
+--------------------------------
+
+- Help the user
+- Understand their situation
+- Qualify them
+- Move them toward a consultation
+- Capture contact details
+`;
+
+    const extractionPrompt = `
+You are a lead extraction system.
+
+Based on the conversation, extract structured lead data for an internal manager.
+
+Return ONLY valid JSON in this exact format:
+
+{
+  "lead_data": {
+    "name": "",
+    "preferred_contact": "",
+    "phone": "",
+    "whatsapp": "",
+    "telegram": "",
+    "email": "",
+    "country": "",
+    "language": "",
+    "us_connection": "",
+    "tax_type": "",
+    "business_type": "",
+    "urgency": "",
+    "main_issue": ""
+  },
+  "summary": "short summary for specialist",
+  "qualified": false,
+  "should_create_lead": false
+}
+
+Rules:
+- Merge with already known data
+- Do not invent facts
+- Leave unknown values as empty strings
+
+LANGUAGE RULES (IMPORTANT):
+- ALL extracted fields MUST be in Russian language for CRM readability
+- Even if the user speaks English, translate extracted values into Russian where possible
+- DO NOT mix Russian and English in the extracted fields unless a brand, legal form, nickname, handle, or exact term must stay original
+- Add a separate field "language" with the user's chat language code:
+  - "ru" for Russian
+  - "en" for English
+  - otherwise use another short language code if clear
+
+NORMALIZATION RULES:
+- Normalize country names to Russian (USA → США, Russia → Россия, etc.)
+- Normalize contact preference to Russian (phone → телефон, email → email, telegram → telegram, whatsapp → WhatsApp)
+- Normalize phone numbers to international format if possible
+
+LEAD RULES:
+- should_create_lead = true ONLY if:
+  1. the lead is qualified
+  2. at least one real contact method is present (phone, whatsapp, telegram, or email)
+  3. there is enough information for a specialist to follow up
+- if contact details are missing, should_create_lead must be false
+- do not set should_create_lead to true just because the case looks promising
+`;
+
+    const assistantRes = await fetch("https://api.openai.com/v1/responses", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model: "gpt-4.1-mini",
+        input: [
+          {
+            role: "system",
+            content: systemPrompt
           },
-          body: JSON.stringify({
-            messages,
-            leadData,
-            leadSent
-          })
-        });
+          ...messages
+        ]
+      })
+    });
 
-        const data = await res.json();
-        typingRow.remove();
+    const assistantData = await assistantRes.json();
 
-        if (!res.ok) {
-          addMessage("bot", data.reply || "Something went wrong.");
-          return;
-        }
-
-        const reply = data.reply || "No response received.";
-        leadData = data.leadData || leadData;
-
-        if (data.shouldCreateLead) {
-          leadSent = true;
-        }
-
-        messages.push({ role: "assistant", content: reply });
-        addMessage("bot", reply);
-      } catch (error) {
-        typingRow.remove();
-        addMessage("bot", "Connection error. Please try again.");
-      } finally {
-        sendBtn.disabled = false;
-      }
+    if (!assistantRes.ok) {
+      console.error("OpenAI assistant error:", assistantData);
+      return res.status(assistantRes.status).json({
+        reply: assistantData?.error?.message || "OpenAI request failed"
+      });
     }
 
-    const firstMessage = "Hi! I’m your AI tax assistant. How can I help you today?";
-    addMessage("bot", firstMessage);
-    messages.push({ role: "assistant", content: firstMessage });
-  </script>
-</body>
-</html>
+    const reply =
+      assistantData?.output?.[0]?.content?.[0]?.text ||
+      assistantData?.output_text ||
+      "No response from model";
+
+    const extractionRes = await fetch("https://api.openai.com/v1/responses", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model: "gpt-4.1-mini",
+        input: [
+          {
+            role: "system",
+            content: extractionPrompt
+          },
+          {
+            role: "system",
+            content: `Existing lead data: ${JSON.stringify(leadData)}`
+          },
+          ...messages,
+          {
+            role: "assistant",
+            content: reply
+          }
+        ]
+      })
+    });
+
+    const extractionData = await extractionRes.json();
+
+    if (!extractionRes.ok) {
+      console.error("OpenAI extraction error:", extractionData);
+      return res.status(200).json({
+        reply,
+        leadData,
+        summary: "",
+        qualified: false,
+        shouldCreateLead: false
+      });
+    }
+
+    const rawExtraction =
+      extractionData?.output?.[0]?.content?.[0]?.text ||
+      extractionData?.output_text ||
+      "";
+
+    const parsed = extractJson(rawExtraction);
+
+    if (!parsed) {
+      console.error("Could not parse extraction JSON:", rawExtraction);
+      return res.status(200).json({
+        reply,
+        leadData,
+        summary: "",
+        qualified: false,
+        shouldCreateLead: false
+      });
+    }
+
+    const mergedLeadData = {
+      name: parsed.lead_data?.name || leadData.name || "",
+      preferred_contact: parsed.lead_data?.preferred_contact || leadData.preferred_contact || "",
+      phone: parsed.lead_data?.phone || leadData.phone || "",
+      whatsapp: parsed.lead_data?.whatsapp || leadData.whatsapp || "",
+      telegram: parsed.lead_data?.telegram || leadData.telegram || "",
+      email: parsed.lead_data?.email || leadData.email || "",
+      country: parsed.lead_data?.country || leadData.country || "",
+      language: parsed.lead_data?.language || leadData.language || "",
+      us_connection: parsed.lead_data?.us_connection || leadData.us_connection || "",
+      tax_type: parsed.lead_data?.tax_type || leadData.tax_type || "",
+      business_type: parsed.lead_data?.business_type || leadData.business_type || "",
+      urgency: parsed.lead_data?.urgency || leadData.urgency || "",
+      main_issue: parsed.lead_data?.main_issue || leadData.main_issue || ""
+    };
+
+    const hasContact =
+      Boolean(mergedLeadData.phone) ||
+      Boolean(mergedLeadData.whatsapp) ||
+      Boolean(mergedLeadData.telegram) ||
+      Boolean(mergedLeadData.email);
+
+    const hasUsefulSummary =
+      Boolean(parsed.summary && parsed.summary.trim().length > 20);
+
+    const isQualified = Boolean(parsed.qualified);
+
+    const shouldCreateLead =
+      !leadSent &&
+      Boolean(parsed.should_create_lead) &&
+      isQualified &&
+      hasContact &&
+      hasUsefulSummary;
+
+    if (shouldCreateLead) {
+      const languageLabel =
+        mergedLeadData.language === "en"
+          ? "английский"
+          : mergedLeadData.language === "ru"
+          ? "русский"
+          : mergedLeadData.language || "-";
+
+      const flag =
+        mergedLeadData.language === "en"
+          ? "🇺🇸"
+          : mergedLeadData.language === "ru"
+          ? "🇷🇺"
+          : "🌍";
+
+      const telegramMessage = `
+🔥 Новый лид — SmartBooks&Tax
+
+Дата: ${new Date().toLocaleString()}
+
+Имя: ${mergedLeadData.name || "-"}
+Предпочтительный контакт: ${mergedLeadData.preferred_contact || "-"}
+Телефон: ${mergedLeadData.phone || "-"}
+WhatsApp: ${mergedLeadData.whatsapp || "-"}
+Telegram: ${mergedLeadData.telegram || "-"}
+Email: ${mergedLeadData.email || "-"}
+Страна: ${mergedLeadData.country || "-"}
+
+${flag} Язык клиента: ${languageLabel}
+💬 Рекомендуемый язык общения: ${languageLabel}
+
+Связь с США: ${mergedLeadData.us_connection || "-"}
+Тип налогового вопроса: ${mergedLeadData.tax_type || "-"}
+Тип бизнеса: ${mergedLeadData.business_type || "-"}
+Срочность: ${mergedLeadData.urgency || "-"}
+Основной запрос: ${mergedLeadData.main_issue || "-"}
+
+Summary:
+${parsed.summary || "-"}
+      `.trim();
+
+      await sendToTelegram(telegramMessage);
+    }
+
+    return res.status(200).json({
+      reply,
+      leadData: mergedLeadData,
+      summary: parsed.summary || "",
+      qualified: isQualified,
+      shouldCreateLead
+    });
+  } catch (error) {
+    console.error("Server error:", error);
+    return res.status(500).json({ reply: "Server error" });
+  }
+}
