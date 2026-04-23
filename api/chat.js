@@ -66,7 +66,9 @@ function detectLeadTemperature({ qualified, leadData, summary }) {
       leadData.industry ||
       leadData.us_connection ||
       leadData.tax_type ||
-      leadData.main_issue
+      leadData.main_issue ||
+      leadData.employees_count ||
+      leadData.payroll_status
   );
   const hasStrongSummary = Boolean(summary && summary.trim().length > 40);
 
@@ -144,6 +146,10 @@ function buildTelegramMessage({ leadData, summary, qualified }) {
     compactField("Тип налогового вопроса", leadData.tax_type),
     compactField("Тип бизнеса", leadData.business_type),
     compactField("Сфера деятельности", leadData.industry),
+    compactField("Стадия бизнеса", leadData.business_stage),
+    compactField("Количество сотрудников", leadData.employees_count),
+    compactField("Owner-operator", leadData.owner_operator),
+    compactField("Payroll", leadData.payroll_status),
     compactField("Срочность", leadData.urgency),
     compactField("Основной запрос", leadData.main_issue)
   ].filter(Boolean);
@@ -241,6 +247,7 @@ CORE BEHAVIOR
 - Do not ask unnecessary or obvious questions
 - Focus only on relevant details
 - When relevant, clarify the user's industry / business sphere
+- When relevant, clarify the size and structure of the business
 
 --------------------------------
 US TAX ONLY
@@ -282,6 +289,7 @@ You should NATURALLY explore:
 - tax status (filing / not filing)
 - type of income or business
 - industry / business sphere
+- business size / stage
 - urgency
 
 BUT:
@@ -418,6 +426,10 @@ Return ONLY valid JSON in this exact format:
     "tax_type": "",
     "business_type": "",
     "industry": "",
+    "business_stage": "",
+    "employees_count": "",
+    "owner_operator": "",
+    "payroll_status": "",
     "urgency": "",
     "main_issue": ""
   },
@@ -452,6 +464,23 @@ NORMALIZATION RULES:
   - consulting → консалтинг
   - construction → строительство
   - restaurant → ресторанный бизнес
+
+BUSINESS SIZE RULES:
+- Extract business_stage in Russian when possible:
+  - new / just started → новый бизнес
+  - operating / active → действующий бизнес
+  - growing / scaling → растущий бизнес
+- Extract employees_count as a short Russian value when possible:
+  - "1 сотрудник"
+  - "5 сотрудников"
+  - "без сотрудников"
+- Extract owner_operator in Russian:
+  - "да"
+  - "нет"
+- Extract payroll_status in Russian:
+  - "есть payroll"
+  - "нет payroll"
+  - "неизвестно"
 
 LEAD RULES:
 - should_create_lead = true ONLY if:
@@ -564,6 +593,10 @@ LEAD RULES:
       tax_type: parsed.lead_data?.tax_type || leadData.tax_type || "",
       business_type: parsed.lead_data?.business_type || leadData.business_type || "",
       industry: parsed.lead_data?.industry || leadData.industry || "",
+      business_stage: parsed.lead_data?.business_stage || leadData.business_stage || "",
+      employees_count: parsed.lead_data?.employees_count || leadData.employees_count || "",
+      owner_operator: parsed.lead_data?.owner_operator || leadData.owner_operator || "",
+      payroll_status: parsed.lead_data?.payroll_status || leadData.payroll_status || "",
       urgency: parsed.lead_data?.urgency || leadData.urgency || "",
       main_issue: parsed.lead_data?.main_issue || leadData.main_issue || ""
     };
